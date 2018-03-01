@@ -8,19 +8,19 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/cihub/seelog"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 )
 
 type SQSRouter struct {
 	handlers []handler
 	termChs  []chan chan int
-	logger   seelog.LoggerInterface
+	logger   *zap.Logger
 }
 
 type Option func(r *SQSRouter) error
 
-func WithLogger(l seelog.LoggerInterface) Option {
+func WithLogger(l *zap.Logger) Option {
 	return func(r *SQSRouter) error {
 		r.logger = l
 		return nil
@@ -67,7 +67,7 @@ func (c *Context) SetDeleteOnFinish(delete bool) {
 
 func New(options ...Option) (*SQSRouter, error) {
 	r := SQSRouter{
-		logger: seelog.Disabled,
+		logger: zap.NewNop(),
 	}
 	for _, o := range options {
 		if err := o(&r); err != nil {
@@ -123,7 +123,7 @@ func (s *SQSRouter) listen(h *handler, termCh chan chan int) {
 			exitCh <- 0
 			break
 		default:
-			sqsClient := sqs.New(session.New(), &aws.Config{})
+			sqsClient := sqs.New(session.Must(session.NewSession()), &aws.Config{})
 			res, err := sqsClient.ReceiveMessage(&sqs.ReceiveMessageInput{
 				MaxNumberOfMessages: aws.Int64(1),
 				QueueUrl:            aws.String(h.queueURL),
@@ -133,10 +133,10 @@ func (s *SQSRouter) listen(h *handler, termCh chan chan int) {
 					if awsErr.Code() == sqs.ErrCodeQueueDoesNotExist {
 						panic(fmt.Sprintf("Not found queue. url=%s", h.queueURL))
 					}
-					s.logger.Errorf("Error code=%s, message=%s, error=%s", awsErr.Code(), awsErr.Message(), awsErr.Error())
+					s.logger.Error(awsErr.Message(), zap.Any("error", awsErr))
 					continue
 				} else {
-					s.logger.Error(err)
+					s.logger.Error(err.Error())
 				}
 			}
 
@@ -154,7 +154,7 @@ func (s *SQSRouter) listen(h *handler, termCh chan chan int) {
 						ReceiptHandle: msg.ReceiptHandle,
 					})
 					if err != nil {
-						s.logger.Error(err)
+						s.logger.Error(err.Error())
 					}
 				}
 			}

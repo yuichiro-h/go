@@ -2,16 +2,18 @@ package main
 
 import (
 	"fmt"
-	"github.com/cihub/seelog"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"go.uber.org/zap"
 
 	"github.com/yuichiro-h/go/aws/sqsrouter"
 )
 
 func main() {
-	r, err := sqsrouter.New(sqsrouter.WithLogger(seelog.Current))
+	logger, _ := zap.NewDevelopment()
+	r, err := sqsrouter.New(sqsrouter.WithLogger(logger))
 	if err != nil {
 		fmt.Println(err)
 		return
