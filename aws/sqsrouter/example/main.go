@@ -18,7 +18,7 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	r.AddHandler(os.Getenv("SQS_URL"), func(context *sqsrouter.Context) {
+	r.AddAsyncHandler(os.Getenv("SQS_URL"), func(context *sqsrouter.Context) {
 		context.SetDeleteOnFinish(true)
 
 		msg, err := context.GetSNSMessage()
@@ -26,7 +26,7 @@ func main() {
 			fmt.Println(err.Error())
 			return
 		}
-		fmt.Printf("%+v", msg)
+		fmt.Printf("%s\n", msg.Message)
 	})
 	r.Start()
 

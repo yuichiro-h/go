@@ -1,21 +1,20 @@
 package sqsrouter
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
 
 type SQSRouter struct {
-	handlers []handler
-	termChs  []chan chan int
-	logger   *zap.Logger
+	handlers  []handler
+	termChs   []chan chan int
+	logger    *zap.Logger
+	sqsClient *sqs.SQS
 }
 
 type Option func(r *SQSRouter) error
@@ -35,39 +34,10 @@ type handler struct {
 	async    bool
 }
 
-type Context struct {
-	Message       *sqs.Message
-	deleteMessage bool
-}
-
-type SNSMessage struct {
-	Type             string `json:"Type"`
-	MessageID        string `json:"MessageId"`
-	TopicArn         string `json:"TopicArn"`
-	Message          string `json:"Message"`
-	Timestamp        string `json:"Timestamp"`
-	SignatureVersion string `json:"SignatureVersion"`
-	Signature        string `json:"Signature"`
-	SignatureCertURL string `json:"SignatureCertURL"`
-	UnsubscribeURL   string `json:"UnsubscribeURL"`
-}
-
-func (c *Context) GetSNSMessage() (*SNSMessage, error) {
-	var msg SNSMessage
-	err := json.Unmarshal([]byte(*c.Message.Body), &msg)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	return &msg, nil
-}
-
-func (c *Context) SetDeleteOnFinish(delete bool) {
-	c.deleteMessage = delete
-}
-
 func New(options ...Option) (*SQSRouter, error) {
 	r := SQSRouter{
-		logger: zap.NewNop(),
+		logger:    zap.NewNop(),
+		sqsClient: sqs.New(session.Must(session.NewSession())),
 	}
 	for _, o := range options {
 		if err := o(&r); err != nil {
@@ -123,8 +93,7 @@ func (s *SQSRouter) listen(h *handler, termCh chan chan int) {
 			exitCh <- 0
 			break
 		default:
-			sqsClient := sqs.New(session.Must(session.NewSession()), &aws.Config{})
-			res, err := sqsClient.ReceiveMessage(&sqs.ReceiveMessageInput{
+			res, err := s.sqsClient.ReceiveMessage(&sqs.ReceiveMessageInput{
 				MaxNumberOfMessages: aws.Int64(1),
 				QueueUrl:            aws.String(h.queueURL),
 			})
@@ -140,32 +109,34 @@ func (s *SQSRouter) listen(h *handler, termCh chan chan int) {
 				}
 			}
 
-			f := func(msg *sqs.Message) {
-				c := Context{
-					Message:       msg,
-					deleteMessage: false,
-				}
-
-				h.function(&c)
-
-				if c.deleteMessage {
-					_, err := sqsClient.DeleteMessage(&sqs.DeleteMessageInput{
-						QueueUrl:      aws.String(h.queueURL),
-						ReceiptHandle: msg.ReceiptHandle,
-					})
-					if err != nil {
-						s.logger.Error(err.Error())
-					}
-				}
-			}
-
 			for _, msg := range res.Messages {
 				if h.async {
-					go f(msg)
+					go func(msg *sqs.Message) {
+						s.invokeHandler(h, msg)
+					}(msg)
 				} else {
-					f(msg)
+					s.invokeHandler(h, msg)
 				}
 			}
+		}
+	}
+}
+
+func (s *SQSRouter) invokeHandler(h *handler, msg *sqs.Message) {
+	c := Context{
+		Message:       msg,
+		deleteMessage: false,
+	}
+
+	h.function(&c)
+
+	if c.deleteMessage {
+		_, err := s.sqsClient.DeleteMessage(&sqs.DeleteMessageInput{
+			QueueUrl:      aws.String(h.queueURL),
+			ReceiptHandle: msg.ReceiptHandle,
+		})
+		if err != nil {
+			s.logger.Error(err.Error())
 		}
 	}
 }
