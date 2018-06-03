@@ -5,6 +5,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"go.uber.org/zap"
@@ -99,6 +100,10 @@ func (s *SQSRouter) listen(h *handler, termCh chan chan int) {
 			})
 			if err != nil {
 				if awsErr, ok := err.(awserr.Error); ok {
+					if awsErr == credentials.ErrNoValidProvidersFoundInChain {
+						s.logger.Warn(awsErr.Message())
+						continue
+					}
 					if awsErr.Code() == sqs.ErrCodeQueueDoesNotExist {
 						panic(fmt.Sprintf("Not found queue. url=%s", h.queueURL))
 					}
