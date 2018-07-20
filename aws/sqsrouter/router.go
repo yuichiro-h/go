@@ -35,10 +35,10 @@ type handler struct {
 	async    bool
 }
 
-func New(options ...Option) (*SQSRouter, error) {
+func New(sess *session.Session, options ...Option) (*SQSRouter, error) {
 	r := SQSRouter{
 		logger:    zap.NewNop(),
-		sqsClient: sqs.New(session.Must(session.NewSession())),
+		sqsClient: sqs.New(sess),
 	}
 	for _, o := range options {
 		if err := o(&r); err != nil {
