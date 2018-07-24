@@ -18,12 +18,11 @@ type SQSRouter struct {
 	sqsClient *sqs.SQS
 }
 
-type Option func(r *SQSRouter) error
+type Option func(r *SQSRouter)
 
 func WithLogger(l *zap.Logger) Option {
-	return func(r *SQSRouter) error {
+	return func(r *SQSRouter) {
 		r.logger = l
-		return nil
 	}
 }
 
@@ -35,18 +34,16 @@ type handler struct {
 	async    bool
 }
 
-func New(sess *session.Session, options ...Option) (*SQSRouter, error) {
+func New(sess *session.Session, options ...Option) *SQSRouter {
 	r := SQSRouter{
 		logger:    zap.NewNop(),
 		sqsClient: sqs.New(sess),
 	}
 	for _, o := range options {
-		if err := o(&r); err != nil {
-			return nil, err
-		}
+		o(&r)
 	}
 
-	return &r, nil
+	return &r
 }
 
 func (s *SQSRouter) addHandler(queueURL string, async bool, h handlerFunc) {
