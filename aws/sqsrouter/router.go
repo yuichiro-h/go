@@ -89,7 +89,7 @@ func (s *SQSRouter) listen(h *handler, termCh chan chan int) {
 		select {
 		case exitCh := <-termCh:
 			exitCh <- 0
-			break
+			return
 		default:
 			res, err := s.sqsClient.ReceiveMessage(&sqs.ReceiveMessageInput{
 				MaxNumberOfMessages: aws.Int64(1),
